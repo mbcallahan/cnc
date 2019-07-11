@@ -1,0 +1,4 @@
+matplotlib
+pywinauto
+pyserial
+saleae
