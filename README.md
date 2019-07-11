@@ -68,3 +68,5 @@ The controller software for the CAERUS project, a toolset for reverse engineerin
 
 * A bug in the HDL implementation currently results in a hang when any channel other than I1 is selected as the "stop channel" or the channel whose address is observed as the condition to stop playback. This results in the software waiting forever to playback to finish. To avoid this, ensure the test set-up always has a non-looping signal with the shortest-duration signal on I1.
 * A bug exists where using sample rates below 200 Hz usually results in incorrect playback. Use higher sample rates (> 300 Hz?) to avoid this.
+
+[![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
