@@ -537,7 +537,7 @@ class TestEnvironment:
                 o.signal = recordings[index]
                 o.mode = 'enabled'
                
-            index += 1
+                index += 1
 
     def get_user_signal(self, sample_rate):
         j, _ = Interface.menu_choice(['New...', 'Existing IO signal'], title='Select signal:')
