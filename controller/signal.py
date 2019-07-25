@@ -46,6 +46,9 @@ class RecordingSession:
         self.start_time = time.monotonic()
         self.sal.capture_start()
 
+        print("Sleeping for 3 seconds...")
+        time.sleep(3)
+        """
         time.sleep(0.5)
         # Wait for the capture to actually start to ensure we don't miss the first part of our data
         if 'Windows' == platform.system():
@@ -58,6 +61,7 @@ class RecordingSession:
         else:
             # TODO: improve Linux support here, actually look for a window
             time.sleep(3)
+        """
 
     def wait_until_finished(self):
         while not self.sal.is_processing_complete():
