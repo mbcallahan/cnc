@@ -125,7 +125,7 @@ class Interface:
             try:
                 io = IO.get(env, input(text))
             except IndexError:
-                print('Invalid IO name.')
+                print("Invalid IO name: %s, try again",signal_name)
                 continue
 
         return io
@@ -259,7 +259,7 @@ def populate_behavior_model_signals(environment, model, *args):
             # TODO: Don't let the user set inputs as outputs and vice versa
             io = environment.get_io(value)
             if io is None:
-                print('Invalid IO name, try again')
+                print("Invalid IO name: %s, try again"%value)
             else:
                 model.relevant_input_values.append(io)
                 break
@@ -273,7 +273,7 @@ def populate_behavior_model_signals(environment, model, *args):
             io = environment.get_io(value)
 
             if io is None:
-                print('Invalid IO name, try again')
+                print("Invalid IO name: %s, try again"%value)
             else:
                 model.relevant_output_values.append(io)
                 break
@@ -437,7 +437,7 @@ class TestEnvironment:
 
         else:
             if io is None:
-                print('Invalid IO')
+                print("Invalid IO, args[0]: %s"%args[0])
             else:
                 print('Cannot plot IO with undefined signal')
 
