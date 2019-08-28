@@ -386,8 +386,9 @@ class TestEnvironment:
                 print(r)
 
     def plot(self, args):
-        if len(args) == 0:
-            print('Provide an argument specifying what to plot: "all" or a signal name')
+        
+        if len(args) == 0 or not isinstance(args,list):
+            print('Provide an argument specifying what to plot: either a list (e.g., ["all"], ["inputs"]) or a signal name (e.g., I1)')
             return
 
         if args[0] in ('all', 'outputs', 'inputs'):
