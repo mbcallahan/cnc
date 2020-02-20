@@ -4,6 +4,7 @@ import time
 import serial
 import serial.tools.list_ports
 import saleae
+import platform
 
 from .signal import Signal
 from .exceptions import PlaybackDeviceException
@@ -19,9 +20,13 @@ class FPGAPlaybackDevice:
         if port is None:
             # Auto-select port
             for comport in list(serial.tools.list_ports.comports()):
-                if "FTDI" in comport[2]:
-                    #Assumption: this is the only FTDI device
-                    port = comport[0]
+                if 'Linux' == platform.system():	# Check for Digilent Adept USB Device on Linux machine
+                    if "Digilent Adept USB Device" in comport[1]:
+                        #Assumption: this is the only FTDI device
+                        port = comport[0]
+                elif 'Windows' == platform.system():	#Check for FTDI on Windows machine
+                    if "FTDI" in comport[2]:
+                        port = comport[0]
 
             # TODO: Some kind of handshake here to verify the device is actually *our* device would be good.
 

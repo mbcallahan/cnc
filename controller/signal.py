@@ -73,7 +73,8 @@ class RecordingSession:
         time.sleep(0.1)
 
         with tempfile.TemporaryDirectory() as d:
-            path = os.path.join(d, 'record.bin')
+            #path = os.path.join(d, 'record.bin')
+            path = os.path.join('/home/rayc/Documents/tmp/', 'record.bin') ### CHANGED: d->tmp dir
             
             # TODO: benchmark whether each_sample would be faster when signals
             # are high-speed clocks (definitely worse with high sample rate but slow signals, though)
@@ -810,6 +811,76 @@ class RS232Signal(Signal):
 
     def __str__(self):
         return 'RS232, {} baud, data:  {}, sampled at {}'.format(
+                self.baud_rate, 
+                repr(self.data),
+                display_rate(self.sample_rate))
+
+class CANSignal(Signal):
+    def __init__(self, data=b'', baud_rate=1000000, char_spacing=0, sample_rate=None, duration=None):
+        if sample_rate is None:
+            sample_rate = baud_rate
+
+        super().__init__(sample_rate=sample_rate, initial_value=HIGH, duration=10/baud_rate)
+        # Always start with a short idle time - one bit
+        #self.sample_count = round(1 / baud_rate)
+        self.baud_rate = baud_rate
+        self.char_spacing = char_spacing
+        self.data = data
+
+        for c in data:
+            self.append_char(c)
+
+        if duration is not None and self.duration < duration:
+            self.sample_count += round(duration * self.sample_rate)
+
+
+    def append_char(self, char):
+        start_time = self.sample_count * self.sample_rate
+
+        # # Flip to low for start bit
+        # self.sample_change_indices.append(self.sample_count)            # Add back in when doing data fields
+
+        # Character
+        last_bit = 1
+        bit = int(char)
+        self.sample_change_indices.append(self.sample_count)
+        change_sample_index = round(self.sample_count + self.sample_rate / self.baud_rate)
+        #if last_bit != bit:
+        self.sample_change_indices.append(change_sample_index)
+
+        last_bit = bit
+
+
+        self.sample_count += round(self.sample_rate / self.baud_rate)
+        yield last_bit
+        """
+        start_time = self.sample_count * self.sample_rate
+
+        # Flip to low for start bit
+        self.sample_change_indices.append(self.sample_count)
+
+        # Character
+        last_bit = 0
+        for i in range(8):
+            bit = (ord(char) >> i) & 0x1
+
+            change_sample_index = round(self.sample_count + (1 + i) * self.sample_rate / self.baud_rate)
+            if last_bit != bit:
+                self.sample_change_indices.append(change_sample_index)
+
+            last_bit = bit
+
+        # Stop bit
+        if last_bit != 1:
+            self.sample_change_indices.append(round(self.sample_count + 9 * self.sample_rate / self.baud_rate))
+
+        self.sample_count += round(11 * self.sample_rate / self.baud_rate)
+
+        # Add character spacing
+        self.sample_count += round(self.char_spacing * self.sample_rate)"""
+
+    def __str__(self):
+        return 'CAN, {} baud, data:  {}, sampled at {}'.format(
                 self.baud_rate, 
                 repr(self.data),
                 display_rate(self.sample_rate))

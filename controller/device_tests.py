@@ -180,6 +180,7 @@ class BasicPlayback(DeviceTest):
         if self.behavior_model is not None:
             if self.behavior_model.validate(inputs, outputs):
                 print('Device behavior validated!')
+                print(outputs)
 
             else:
                 print('Device behavior did not validate.')
@@ -652,6 +653,37 @@ class MaxNumGlitchTest(DeviceTest):
                     break
 
         # TODO: return result dict (see ButtonPulseWidthTest... used in TestEnviornment.run for multi-iteration runs)
+class CanBusDeviceTest(DeviceTest):
+    test_name = 'Can Bus Device'
+
+    relevant_inputs = [
+        TestIOMapping('CAN Input Loopback')
+    ]
+    def run(self, inputs, outputs):
+        serialout = self.relevant_input_values[0]
+        my_data = "0011001100"#"1111110110001100010000010100010101101111111"
+        serialout.signal = signal.CANSignal(data='0', baud_rate=125000, duration=0.01)
+        for c in my_data:
+            #serialout.signal = signal.CANSignal(data=c, baud_rate=125000, duration=0.01)
+            serialout.signal.append_char(c)
+        self.send_inputs(inputs, outputs)
+        self.behavior_model.validate(inputs, outputs)
+        #self.environment.plot(['inputs'])
+        #self.environment.plot(['outputs'])
+
+        print("Done")
+
+        # self.send_inputs(inputs, outputs)
+
+        # print('Analyzing...')
+        # if self.behavior_model is not None:
+        #     if self.behavior_model.validate(inputs, outputs):
+        #         print('Device behavior validated!')
+        #         print(outputs)
+
+        #     else:
+        #         print('Device behavior did not validate.')
+
 
 class ButtonPulseWidthTest(DeviceTest):
     test_name = 'Button Pulse Width'
@@ -690,7 +722,6 @@ class ButtonPulseWidthTest(DeviceTest):
             pulse_good_min = pulse_max # Smallest vlaue that worked
             err_bad = 0
             err_good = 0
-
 
             # Find min pulse width
             while 1:
@@ -1025,6 +1056,7 @@ tests = [
     ResponseTimeTest, 
     MaxNumGlitchTest, 
     MaxDriftTest, 
+    CanBusDeviceTest,
     ButtonPulseWidthTest, 
     PICSingleInstructionGlitch,
     SerialFuzzer, 
