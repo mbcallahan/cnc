@@ -25,6 +25,8 @@ import threading
 import time
 import logging
 import os
+import serial
+import serial.tools.list_ports
 
 
 EXIT_MESSAGE = 'Goodbye.'
@@ -895,7 +897,7 @@ class TestEnvironment:
     def show_help(self, args=[]):
         print(HELP_MESSAGE.format(', '.join(args)))
 	
-    def test_add(self, args=None):
+    def test_add(self, args):
         _, T = Interface.menu_choice(device_tests.tests, title='Available tests: ', prompt='Enter a test: ')
         t = T(self)
         t.run_configure_ui()
@@ -943,21 +945,26 @@ class TestEnvironment:
         print('Created new behavior model template at {}'.format(filepath))
         
     def run(self, args):
-        iterations = int(args[0]) if len(args) > 0 else 1
-        results = []
+        try:
+            iterations = int(args[0]) if len(args) > 0 else 1
+            results = []
 
-        for i in range(iterations):
+            for i in range(iterations):
+                if iterations > 1:
+                    print('\nITERATION {}'.format(i))
+                for test in self.tests:
+                    result = test.run(self.inputs, self.outputs)
+                    results.append(result)
+
             if iterations > 1:
-                print('\nITERATION {}'.format(i))
-            for test in self.tests:
-                result = test.run(self.inputs, self.outputs)
-                results.append(result)
+                print('Test results:')
+                print('Ran {} iterations'.format(iterations))
+                for r in results:
+                    print(r)
+        except serial.serialutil.SerialException:
+            print('Serial Exception: Attempting to use a port that is not open')
+            print('Check the connection to the playback device. Use the connect function to open the serial port')
 
-        if iterations > 1:
-            print('Test results:')
-            print('Ran {} iterations'.format(iterations))
-            for r in results:
-                print(r)
 
     def plot(self, args):
         
@@ -1178,6 +1185,9 @@ class TestEnvironment:
         print(clearIO)
         io.signal = None
 
+    def connect(self, args):
+        self.playback_device.connect(args[0] if len(args) > 0 else None)
+
 #Parsing input
 def parse_io_name(name):
     if len(name) == 0:
@@ -1227,7 +1237,8 @@ def main():
         'record': env.record,
         'copy': env.copy,
         'edit': env.edit,
-        'clear': env.clear
+        'clear': env.clear,
+        'connect': env.connect
     }
 
     if len(sys.argv) >= 2 and os.path.exists(sys.argv[1]): #Checking for all arguments entered and for valid arguments
@@ -1323,5 +1334,6 @@ commands = {
         'record': env.record,
         'copy': env.copy,
         'edit': env.edit,
-        'clear': env.clear
+        'clear': env.clear,
+        'connect': env.connect
         }
