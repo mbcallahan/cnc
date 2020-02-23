@@ -17,21 +17,71 @@ class FPGAPlaybackDevice:
     MAX_LENGTH = 2**16
 
     def __init__(self, port=None):
-        if port is None:
+        self.connected = False                              #Flag for playback device connection
+        self.device_name = ''                               #Playback device name
+        self.ser = serial.Serial(None, baudrate=115200)     #Serial port connection to playback device
+        self.loaded_signal_mask = 0xF
+
+        self.connect()                                      #Search for playback device
+
+    def connect(self, port=None):
+        device_found = False
+        for comport in list(serial.tools.list_ports.comports()):    #Check if device is still connected
+            if self.ser.port == comport[0]:
+                self.connected = True
+                device_found = True
+        if not(device_found):
+            self.connected = False
+            self.ser = serial.Serial(None, baudrate=115200)
+            self.device_name = ''
+
+        if port is not None:                                #Override any connection if port is provided
+            self.device_name = ''
+            self.ser = serial.Serial(None, baudrate=115200)
+            self.connected = False
+            for comport in list(serial.tools.list_ports.comports()):
+                if 'Linux' == platform.system():            # Check for Digilent Adept USB Device on Linux machine
+                    if "Digilent Adept USB Device" in comport[1] and port == comport[0]:
+                        self.device_name = comport[1]
+                        self.ser = serial.Serial(port, baudrate=115200)
+                        self.connected = True
+                elif 'Windows' == platform.system():        #Check for FTDI on Windows machine
+                    if "FTDI" in comport[2] and port == comport[0]:
+                        self.device_name = comport[2]
+                        self.ser = serial.Serial(port, baudrate=115200)
+                        self.connected = True
+
+            if self.ser.port is None:                       #List available ports if provided port is invalid
+                print('Invalid port')
+                for comport in list(serial.tools.list_ports.comports()):
+                    if 'Linux' == platform.system():
+                        print('{} available at {}'.format(comport[1],comport[0]))
+                    elif 'Windows' == platform.system(): 
+                        print('{} available at {}'.format(comport[2],comport[0]))
+
+        elif self.connected is False:                       #Auto select port if not connected
             # Auto-select port
             for comport in list(serial.tools.list_ports.comports()):
-                if 'Linux' == platform.system():	# Check for Digilent Adept USB Device on Linux machine
+                if 'Linux' == platform.system():	       # Check for Digilent Adept USB Device on Linux machine
                     if "Digilent Adept USB Device" in comport[1]:
                         #Assumption: this is the only FTDI device
                         port = comport[0]
-                elif 'Windows' == platform.system():	#Check for FTDI on Windows machine
+                        self.device_name = comport[1]
+                        self.ser = serial.Serial(port, baudrate=115200)
+                        self.connected = True
+                elif 'Windows' == platform.system():	   #Check for FTDI on Windows machine
                     if "FTDI" in comport[2]:
                         port = comport[0]
+                        self.device_name = comport[2]
+                        self.ser = serial.Serial(port, baudrate=115200)
+                        self.connected = True
 
             # TODO: Some kind of handshake here to verify the device is actually *our* device would be good.
-
-        self.ser = serial.Serial(port, baudrate=115200)
-        self.loaded_signal_mask = 0xF
+            if self.ser.port is None:
+                print('Unable to find a playback device')
+                
+        if self.ser.port is not None:                       #Print valid connection
+            print('Connected to {} on port {}\n'.format(self.device_name,self.ser.port))
 
     def await_resp(self, ersp='OK\n', echo=DO_ECHO):
         rsp = ''
