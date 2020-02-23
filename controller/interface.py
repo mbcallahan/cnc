@@ -27,6 +27,7 @@ import logging
 import os
 import serial
 import serial.tools.list_ports
+import traceback
 
 
 EXIT_MESSAGE = 'Goodbye.'
@@ -964,7 +965,9 @@ class TestEnvironment:
         except serial.serialutil.SerialException:
             print('Serial Exception: Attempting to use a port that is not open')
             print('Check the connection to the playback device. Use the connect function to open the serial port')
-
+        except Exception as e:
+            print('Aborting: ' + str(e))
+            print(traceback.format_exc())
 
     def plot(self, args):
         
