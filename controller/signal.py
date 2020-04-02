@@ -73,8 +73,7 @@ class RecordingSession:
         time.sleep(0.1)
 
         with tempfile.TemporaryDirectory() as d:
-            #path = os.path.join(d, 'record.bin')
-            path = os.path.join('/home/rayc/Documents/tmp/', 'record.bin') ### CHANGED: d->tmp dir
+            path = os.path.join(os.getcwd(), 'tmp/record.bin')
             
             # TODO: benchmark whether each_sample would be faster when signals
             # are high-speed clocks (definitely worse with high sample rate but slow signals, though)
