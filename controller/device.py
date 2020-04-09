@@ -14,7 +14,7 @@ DO_ECHO = False
 
 class FPGAPlaybackDevice:
     #STOP_SUPPORT = True
-    MAX_LENGTH = 2**16
+    MAX_LENGTH = 2**20
 
     def __init__(self, port=None):
         self.connected = False                              #Flag for playback device connection
@@ -61,7 +61,7 @@ class FPGAPlaybackDevice:
 
         elif self.connected is False:                       #Auto select port if not connected
             # Auto-select port
-            for comport in list(serial.tools.list_ports.comports()):
+            for comport in reversed(list(serial.tools.list_ports.comports())):
                 if 'Linux' == platform.system():	       # Check for Digilent Adept USB Device on Linux machine
                     if "Digilent Adept USB Device" in comport[1]:
                         #Assumption: this is the only FTDI device

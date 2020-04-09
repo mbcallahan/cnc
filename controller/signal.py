@@ -815,19 +815,30 @@ class RS232Signal(Signal):
                 display_rate(self.sample_rate))
 
 class CANSignal(Signal):
-    def __init__(self, data=b'', baud_rate=1000000, char_spacing=0, sample_rate=None, duration=None):
+    #Currently requires exact bits in binary to be provided
+    #Future work could include changing current data field to a signal override, adding
+    #separate data, CRC, identifier fields
+    def __init__(self, data=b'', baud_rate=1000000, sample_rate=None, duration=None):
         if sample_rate is None:
             sample_rate = baud_rate
 
         super().__init__(sample_rate=sample_rate, initial_value=HIGH, duration=10/baud_rate)
-        # Always start with a short idle time - one bit
+
         #self.sample_count = round(1 / baud_rate)
         self.baud_rate = baud_rate
-        self.char_spacing = char_spacing
         self.data = data
 
+        #Iterate through data to generate full signal
+        prev_value = 1
         for c in data:
-            self.append_char(c)
+            print(int(c))
+            if(int(c) != prev_value):
+                self.sample_change_indices.append(self.sample_count)
+                prev_value = int(c)
+            self.sample_count+=1
+        if prev_value != 1:
+            self.sample_change_indices.append(self.sample_count)
+            self.sample_count+=1
 
         if duration is not None and self.duration < duration:
             self.sample_count += round(duration * self.sample_rate)
@@ -842,41 +853,7 @@ class CANSignal(Signal):
         # Character
         last_bit = 1
         bit = int(char)
-        self.sample_change_indices.append(self.sample_count)
-        change_sample_index = round(self.sample_count + self.sample_rate / self.baud_rate)
-        #if last_bit != bit:
-        self.sample_change_indices.append(change_sample_index)
-
-        last_bit = bit
-
-
-        self.sample_count += round(self.sample_rate / self.baud_rate)
-        yield last_bit
-        """
-        start_time = self.sample_count * self.sample_rate
-
-        # Flip to low for start bit
-        self.sample_change_indices.append(self.sample_count)
-
-        # Character
-        last_bit = 0
-        for i in range(8):
-            bit = (ord(char) >> i) & 0x1
-
-            change_sample_index = round(self.sample_count + (1 + i) * self.sample_rate / self.baud_rate)
-            if last_bit != bit:
-                self.sample_change_indices.append(change_sample_index)
-
-            last_bit = bit
-
-        # Stop bit
-        if last_bit != 1:
-            self.sample_change_indices.append(round(self.sample_count + 9 * self.sample_rate / self.baud_rate))
-
-        self.sample_count += round(11 * self.sample_rate / self.baud_rate)
-
-        # Add character spacing
-        self.sample_count += round(self.char_spacing * self.sample_rate)"""
+        
 
     def __str__(self):
         return 'CAN, {} baud, data:  {}, sampled at {}'.format(
