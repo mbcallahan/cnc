@@ -1329,8 +1329,11 @@ def main():
         env.show_help(commands.keys())
         print('')
         env.status()
-    root = Tk()
-    app = Application(master=root)
+    try:
+        root = Tk()
+        app = Application(master=root)
+    except:
+        pass
     print('')
     # p=Popen(["./sample.sh"],stdin=PIPE)
     # cmd, *args = raw_input()
