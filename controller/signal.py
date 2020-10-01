@@ -74,7 +74,7 @@ class RecordingSession:
 
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, 'record.bin')
-            
+
             # TODO: benchmark whether each_sample would be faster when signals
             # are high-speed clocks (definitely worse with high sample rate but slow signals, though)
             export_settings = {
@@ -810,6 +810,53 @@ class RS232Signal(Signal):
 
     def __str__(self):
         return 'RS232, {} baud, data:  {}, sampled at {}'.format(
+                self.baud_rate, 
+                repr(self.data),
+                display_rate(self.sample_rate))
+
+class CANSignal(Signal):
+    #Currently requires exact bits in binary to be provided
+    #Future work could include changing current data field to a signal override, adding
+    #separate data, CRC, identifier fields
+    def __init__(self, data=b'', baud_rate=1000000, sample_rate=None, duration=None):
+        if sample_rate is None:
+            sample_rate = baud_rate
+
+        super().__init__(sample_rate=sample_rate, initial_value=HIGH, duration=10/baud_rate)
+
+        #self.sample_count = round(1 / baud_rate)
+        self.baud_rate = baud_rate
+        self.data = data
+
+        #Iterate through data to generate full signal
+        prev_value = 1
+        for c in data:
+            print(int(c))
+            if(int(c) != prev_value):
+                self.sample_change_indices.append(self.sample_count)
+                prev_value = int(c)
+            self.sample_count+=1
+        if prev_value != 1:
+            self.sample_change_indices.append(self.sample_count)
+            self.sample_count+=1
+
+        if duration is not None and self.duration < duration:
+            self.sample_count += round(duration * self.sample_rate)
+
+
+    def append_char(self, char):
+        start_time = self.sample_count * self.sample_rate
+
+        # # Flip to low for start bit
+        # self.sample_change_indices.append(self.sample_count)            # Add back in when doing data fields
+
+        # Character
+        last_bit = 1
+        bit = int(char)
+        
+
+    def __str__(self):
+        return 'CAN, {} baud, data:  {}, sampled at {}'.format(
                 self.baud_rate, 
                 repr(self.data),
                 display_rate(self.sample_rate))

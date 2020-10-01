@@ -14,6 +14,28 @@ from .utils import input_rate, display_rate, input_duration, parse_rate, prompt_
 from .device import FPGAPlaybackDevice
 from .behavior_model import MODEL_TEMPLATE
 
+try:
+    from tkinter import *
+    from tkinter import ttk
+    from tkinter import Entry
+    from tkinter import scrolledtext
+    import tkinter as tk
+    import tkinter.filedialog
+except:
+    print("Tkinter not installed. GUI command invalid")
+
+    
+from subprocess import Popen, PIPE
+import multiprocessing
+import threading
+import time
+import logging
+import os
+import serial
+import serial.tools.list_ports
+import traceback
+
+
 EXIT_MESSAGE = 'Goodbye.'
 HELP_MESSAGE = 'Available commands: {}, exit'
 IO_NAME_MESSAGE = 'A signal name might be "O1" to select output 1, or "I2" to select input 2'
@@ -28,46 +50,22 @@ TESTS
 SETTINGS
 {}
 Behavior Model: {}'''
-
-def parse_io_name(name):
-    if len(name) == 0:
-        return None
-
-    io_type = name[0].lower()
-
-    if io_type not in ('i', 'o'):
-        print(IO_NAME_MESSAGE)
-        return None, None
-
-    try:
-        io_index = int(name[1:])
-    except ValueError:
-        print(IO_NAME_MESSAGE)
-        return None, None
-
-    return io_type, io_index
-
-def input_int(*args):
-    while 1:
-        val = input(*args)
-        try:
-            return int(val)
-        except ValueError:
-            print('Not an integer, try again')
-
+cmd = ' '
+global clearIO
+global sampleValue
 class Interface:
     @staticmethod
-    def build_signal_clock(sample_rate, force_sample_rate=False):
+    def build_signal_clock(sample_rate, force_sample_rate=False): #Sample rate, duty cycle, 
         while 1:
             rate = input_rate('Clock rate: ')
             duty = float(input('Duty cycle [0.50]: ') or 0.50)
 
             try:
-                if force_sample_rate:
+                if force_sample_rate: #False
                     clock = signal.Clock(clock_rate=rate, duty_cycle=duty, sample_rate=sample_rate)
                 else:
                     clock = signal.Clock(clock_rate=rate, duty_cycle=duty)
-            except (exceptions.ClockTooFast, exceptions.ClockInvalidDutyCycle) as e:
+            except (exceptions.ClockTooFast, exceptions.ClockInvalidDutyCycle) as e: #Checking valide sample rates and duty cycle
                 print(str(e))
                 continue
             break
@@ -99,24 +97,34 @@ class Interface:
         else:
             return signal.RS232Signal(message, baud_rate)
 
+    @staticmethod
+    def build_signal_can(sample_rate, force_sample_rate=False):
+        baud_rate = input_int('Baud rate: ')
+        message = bytes(input('Data: '), "utf-8").decode("unicode_escape") # Parse \n as an actual newline, etc. 
+        if force_sample_rate:
+            return signal.CANSignal(message, baud_rate, sample_rate=sample_rate)
+        else:
+            return signal.CANSignal(message, baud_rate)
+
     # TODO: implement "bitstream" mode that takes a series of 0's and 1's from the user, to be directly used as samples
     #@staticmethod
     #def build_signal_bitstream(env):
 
     @classmethod
-    def build_signal(cls, sample_rate, force_sample_rate=False):
+    def build_signal(cls, sample_rate, force_sample_rate=False): #List of signals constructed from signal file
         signal_builders = {
             'clock': cls.build_signal_clock,
             'pulse': cls.build_signal_pulse,
             'level': cls.build_signal_level,
-            'rs232': cls.build_signal_rs232
+            'rs232': cls.build_signal_rs232,
+            'can': cls.build_signal_can
         }
 
         _, builder_name = cls.menu_choice(list(signal_builders.keys()), prompt='Signal type: ', title='Signal types:')
         return signal_builders[builder_name](sample_rate, force_sample_rate)
 
     @staticmethod
-    def select_signal(env, text, signal_name=None):
+    def select_signal(env, text, signal_name=None): 
         io = None
         if signal_name is not None:
             io = IO.get(env, signal_name)
@@ -131,11 +139,11 @@ class Interface:
         return io
 
     @staticmethod
-    def menu_choice(items, prompt='Choice: ', title=None, seperator='\n', render_item=lambda x: x):
+    def menu_choice(items, prompt='Choice: ', title=None, seperator='\n', render_item=lambda x: x): #Creates menu. Can take in multiple types of menus
         if title is not None:
             print(title)
         for i, item in enumerate(items):
-            print('[{}] {}'.format(i, render_item(item)), end=seperator)
+            print('[{}] {}'.format(i, render_item(item))) #Problems with end = separator (end indicates what goes at the end of string)
 
         choice = None
         while choice is None:
@@ -144,7 +152,7 @@ class Interface:
             try:
                 user_index = int(user_text)
                 choice = items[user_index]
-            except ValueError:
+            except ValueError: 
                 print('Invalid choice: not a number')
                 continue
             except IndexError:
@@ -154,7 +162,7 @@ class Interface:
         return user_index, choice
 
 
-class IO:
+class IO: #Input output interface
     abbrev = 'IO'
 
     @staticmethod
@@ -196,6 +204,11 @@ class IO:
 
         print('{}{} configured: {}'.format(self.abbrev, self.index, self.status()))
 
+    def disable(self):
+        self.mode = 'disabled'
+        self.config_disable()
+        print('{}{} configured: {}'.format(self.abbrev, self.index, self.status()))
+
     def config_enable(self):
         raise NotImplementedError('Not implemented in abstract class')
 
@@ -216,8 +229,8 @@ class Input(IO):
     def config_enable(self):
         self.signal = Interface.build_signal(self.env.global_sample_rate)
         
-
-class Output(IO):
+#Calls IO interface
+class Output(IO): 
     abbrev = 'O'
 
     def __init__(self, index, mode='disabled', env=None):
@@ -278,21 +291,661 @@ def populate_behavior_model_signals(environment, model, *args):
                 model.relevant_output_values.append(io)
                 break
 
+#Names seem explanatory. Can adjust each command individually
+try:
+    class Clear(Frame):
+        def create_widgets(self):
 
+            self.config_button_1 = Button(self)
+            self.config_button_2 = Button(self)
+            self.config_button_3 = Button(self)
+            self.config_button_4 = Button(self)
+            self.config_button_5 = Button(self)
+
+            self.config_button_1['text'] = 'CONFIG0'
+            self.config_button_1['fg'] = 'green'
+            self.config_button_1['command'] = self.config1
+            self.config_button_1.pack({'side': 'left'})
+
+            self.config_button_2['text'] = 'CONFIG1'
+            self.config_button_2['fg'] = 'green'
+            self.config_button_2['command'] = self.config2
+            self.config_button_2.pack({'side': 'left'})
+
+            self.config_button_3['text'] = 'CONFIG2'
+            self.config_button_3['fg'] = 'green'
+            self.config_button_3['command'] = self.config3
+            self.config_button_3.pack({'side': 'left'})
+
+            self.config_button_4['text'] = 'CONFIG3'
+            self.config_button_4['fg'] = 'green'
+            self.config_button_4['command'] = self.config4
+            self.config_button_4.pack({'side': 'left'})
+
+            self.config_button_5['text'] = 'CONFIG4'
+            self.config_button_5['fg'] = 'green'
+            self.config_button_5['command'] = self.config4
+            self.config_button_5.pack({'side': 'left'})
+
+        def config1(self):
+            global clearIO
+            print('clear I0')
+            clearIO = 'I0'
+            env.clear('')
+            
+        def config2(self):
+            global clearIO
+            print('clear I1')
+            clearIO = 'I1'
+            env.clear('')
+
+        def config3(self):
+            global clearIO
+            print('clear I2')
+            clearIO = 'I2'
+            env.clear('')
+
+        def config4(self):
+            global clearIO
+            print('clear I3')
+            clearIO = 'I3'
+            env.clear('')
+
+        def config5(self):
+            global clearIO
+            print('clear I4')
+            clearIO = 'I4'
+            env.clear('')
+
+        def __init__(self, master=None):
+            Frame.__init__(self, master)
+            self.config_button = None
+            self.pack()
+            self.create_widgets()
+            self.poll()
+
+        def poll(self):
+            """
+            This method is required to allow the mainloop to receive keyboard
+            interrupts when the frame does not have the focus
+            """
+            self.master.after(250, self.poll)
+
+
+    class Copy1(Frame):
+
+        def create_widgets(self):
+            copyInput = 'I0'
+            toInput = 'I0'
+            self.config_button_1 = Button(self)
+            self.config_button_2 = Button(self)
+            self.config_button_3 = Button(self)
+            self.config_button_4 = Button(self)
+            self.config_button_5 = Button(self)
+
+            self.config_button_1['text'] = 'CONFIG0'
+            self.config_button_1['fg'] = 'green'
+            self.config_button_1['command'] = self.config1
+            self.config_button_1.pack(side=LEFT)
+
+            self.config_button_2['text'] = 'CONFIG1'
+            self.config_button_2['fg'] = 'green'
+            self.config_button_2['command'] = self.config2
+            self.config_button_2.pack({'side': 'left'})
+
+            self.config_button_3['text'] = 'CONFIG2'
+            self.config_button_3['fg'] = 'green'
+            self.config_button_3['command'] = self.config3
+            self.config_button_3.pack({'side': 'left'})
+
+            self.config_button_4['text'] = 'CONFIG3'
+            self.config_button_4['fg'] = 'green'
+            self.config_button_4['command'] = self.config4
+            self.config_button_4.pack({'side': 'left'})
+
+            self.config_button_5['text'] = 'CONFIG4'
+            self.config_button_5['fg'] = 'green'
+            self.config_button_5['command'] = self.config5
+            self.config_button_5.pack({'side': 'left'})
+
+            self.config_button_6 = Button(self)
+            self.config_button_7 = Button(self)
+            self.config_button_8 = Button(self)
+            self.config_button_9 = Button(self)
+            self.config_button_10 = Button(self)
+
+            self.config_button_6['text'] = 'CONFIG0_TO'
+            self.config_button_6['fg'] = 'green'
+            self.config_button_6['command'] = self.config6
+            self.config_button_6.pack()
+
+            self.config_button_7['text'] = 'CONFIG1_TO'
+            self.config_button_7['fg'] = 'green'
+            self.config_button_7['command'] = self.config7
+            self.config_button_7.pack()
+
+            self.config_button_8['text'] = 'CONFIG2_TO'
+            self.config_button_8['fg'] = 'green'
+            self.config_button_8['command'] = self.config8
+            self.config_button_8.pack()
+
+            self.config_button_9['text'] = 'CONFIG3_TO'
+            self.config_button_9['fg'] = 'green'
+            self.config_button_9['command'] = self.config9
+            self.config_button_9.pack()
+
+            self.config_button_10['text'] = 'CONFIG4_TO'
+            self.config_button_10['fg'] = 'green'
+            self.config_button_10['command'] = self.config10
+            self.config_button_10.pack()
+
+            self.copy = Button(self)
+            self.copy['text'] = 'COPY'
+            self.copy['fg'] = 'red'
+            self.copy['command'] = self.copyit
+            self.copy.pack({'side': 'left'})
+
+        def config1(self):
+            global copyInput
+            print('I0')
+            copyInput = 'I0'
+            
+            
+        def config2(self):
+            global copyInput
+            print('I1')
+            copyInput = 'I1'
+            
+
+        def config3(self):
+            global copyInput
+            print('I2')
+            copyInput = 'I2'
+            
+
+        def config4(self):
+            global copyInput
+            print('I3')
+            copyInput = 'I3'
+            
+
+        def config5(self):
+            global copyInput
+            print('I4')
+            copyInput = 'I4'
+
+        def config6(self):
+            global toInput
+            print('I0')
+            toInput = 'I0'
+            
+            
+        def config7(self):
+            global toInput
+            print('I1')
+            toInput = 'I1'
+            
+
+        def config8(self):
+            global toInput
+            print('I2')
+            toInput = 'I2'
+            
+
+        def config9(self):
+            global toInput
+            print('I3')
+            toInput = 'I3'
+            
+
+        def config10(self):
+            global toInput
+            print('I4')
+            toInput = 'I4'
+
+        def copyit(self):
+            global toInput
+            global copyInput
+            print('copy ' + copyInput + ' to ' +toInput)
+            env.copy([copyInput, toInput])
+            
+
+        def __init__(self, master=None):
+            Frame.__init__(self, master)
+            self.config_button = None
+            self.pack()
+            self.create_widgets()
+            self.poll()
+
+        def poll(self):
+            """
+            This method is required to allow the mainloop to receive keyboard
+            interrupts when the frame does not have the focus
+            """
+            self.master.after(250, self.poll)
+
+    class Disable(Frame):
+        def create_widgets(self):
+            self.config_button_1 = Button(self)
+            self.config_button_2 = Button(self)
+            self.config_button_3 = Button(self)
+            self.config_button_4 = Button(self)
+            self.config_button_5 = Button(self)
+
+            self.config_button_1['text'] = 'I0'
+            self.config_button_1['fg'] = 'green'
+            self.config_button_1['command'] = self.I0
+            self.config_button_1.pack({'side': 'left'})
+
+            self.config_button_2['text'] = 'I1'
+            self.config_button_2['fg'] = 'green'
+            self.config_button_2['command'] = self.I1
+            self.config_button_2.pack({'side': 'left'})
+
+            self.config_button_3['text'] = 'I2'
+            self.config_button_3['fg'] = 'green'
+            self.config_button_3['command'] = self.I2
+            self.config_button_3.pack({'side': 'left'})
+
+            self.config_button_4['text'] = 'I3'
+            self.config_button_4['fg'] = 'green'
+            self.config_button_4['command'] = self.I3
+            self.config_button_4.pack({'side': 'left'})
+
+            self.config_button_5['text'] = 'I4'
+            self.config_button_5['fg'] = 'green'
+            self.config_button_5['command'] = self.I4
+            self.config_button_5.pack({'side': 'left'})
+
+
+        def I0(self):
+            print('I0')
+            global disableInput
+            disableInput = 'I0'
+            env.disable('I0')
+        def I1(self):
+            print('I1')
+            global disableInput
+            disableInput = 'I1'
+            env.disable('I0')
+        def I2(self):
+            print('I2')
+            global disableInput
+            disableInput = 'I2'
+            env.disable('I0')
+        def I3(self):
+            print('I3')
+            global disableInput
+            disableInput = 'I3'
+            env.disable('I0')
+        def I4(self):
+            print('I4')
+            global disableInput
+            disableInput = 'I4'
+            env.disable('I0')
+
+        def __init__(self, master=None):
+            Frame.__init__(self, master)
+            self.config_button = None
+            self.pack()
+            self.create_widgets()
+            self.poll()
+
+        def poll(self):
+            """
+            This method is required to allow the mainloop to receive keyboard
+            interrupts when the frame does not have the focus
+            """
+            self.master.after(250, self.poll)
+
+    class TextBox:
+        def create_widgets(self):
+            root = tk.Tk()
+            title = tk.Label(root, text="Signal Types:",font=("Arial",18))
+            clock = tk.Label(root, text="Clock [0]",font=("Arial",12))
+            pulse = tk.Label(root, text="Pulse [1]",font=("Arial",12))
+            level = tk.Label(root, text="Level [2]",font=("Arial",12))
+            rs232 = tk.Label(root, text="RS232 [3]",font=("Arial",12))
+            can = tk.Label(root, text="CAN [4]",font=("Arial",12))
+            select = tk.Label(root, text="Signal Type:",font=("Arial",18))
+            frame = tk.Frame(master=root, width = 500, bg = 'black')
+            frame.pack()
+            global textBoxConfig
+            textBoxConfig=Text(root, height=1, width=5)
+            title.pack()
+            clock.pack()
+            pulse.pack()
+            level.pack()
+            rs232.pack()
+            can.pack()
+            select.pack()
+            textBoxConfig.pack()
+            buttonCommit=Button(root, height=1, width=10, text="Commit")
+            buttonCommit['command'] = self.retrieve_input
+            buttonCommit.pack()
+
+        def retrieve_input(self):
+            switcher = {
+                '0':'clock',
+                '1':'pulse',
+                '2':'level',
+                '3':'rs232',
+                '4':'can'
+            }
+            if switcher.get(textBoxConfig.get("1.0","end-1c"),"Invalid") == 'can':
+                app = Can()
+            elif switcher.get(textBoxConfig.get("1.0","end-1c"),"Invalid") == 'rs232':
+                app = RS232()
+            else:
+                print(switcher.get(textBoxConfig.get("1.0","end-1c"),"Invalid"))
+
+
+        def __init__(self, master=None):
+            self.create_widgets()
+
+
+    class Can:
+        def create_widgets(self):
+            root = tk.Tk()
+            global textBoxData
+            global textBoxBaud
+            global textBoxInput
+            frame = tk.Frame(master=root, width = 500, bg = 'black')
+            frame.pack()
+            title = tk.Label(root, text="CAN",font=("Arial",18))
+            inputConfig = tk.Label(root, text="Input:",font=("Arial",12))
+            textBoxInput=Text(root, height=1, width=5)
+            baud = tk.Label(root, text="Baud:",font=("Arial",12))
+            textBoxBaud=Text(root, height=1, width=5)
+            data = tk.Label(root, text="Data:",font=("Arial",12))
+            textBoxData=Text(root, height=1, width=5)
+            title.pack()
+            inputConfig.pack()
+            textBoxInput.pack()
+            baud.pack()
+            textBoxBaud.pack()
+            data.pack()
+            textBoxData.pack()
+            buttonCommit=Button(root, height=1, width=10, text="Commit")
+            buttonCommit['command'] = self.retrieve_input
+            buttonCommit.pack()
+
+        def retrieve_input(self):
+            print(textBoxInput.get("1.0","end-1c"))
+            print(textBoxBaud.get("1.0","end-1c"))
+            print(textBoxData.get("1.0","end-1c"))
+            global can_signal
+            global input_sig
+            can_signal = signal.CANSignal(textBoxData.get("1.0","end-1c"), (int(textBoxBaud.get("1.0","end-1c"))))
+            print(textBoxInput.get("1.0","end-1c"))
+            input_sig = textBoxInput.get("1.0", "end-1c")
+            env.configGui(textBoxInput.get("1.0","end-1c"))
+
+
+
+        def __init__(self, master=None):
+
+            self.create_widgets()
+
+
+    class RS232:
+        def create_widgets(self):
+            root = tk.Tk()
+            title = tk.Label(root, text="Clock",font=("Arial",18))
+            clock = tk.Label(root, text="Clock [0]",font=("Arial",12))
+            pulse = tk.Label(root, text="Pulse [1]",font=("Arial",12))
+            level = tk.Label(root, text="Level [2]",font=("Arial",12))
+            rs232 = tk.Label(root, text="RS232 [3]",font=("Arial",12))
+            can = tk.Label(root, text="CAN [4]",font=("Arial",12))
+            select = tk.Label(root, text="Signal Type:",font=("Arial",18))
+            global textBoxConfig
+            textBoxConfig=Text(root, height=1, width=5)
+            title.pack()
+            clock.pack()
+            pulse.pack()
+            level.pack()
+            rs232.pack()
+            can.pack()
+            select.pack()
+            textBoxConfig.pack()
+            buttonCommit=Button(root, height=1, width=10, text="Commit")
+            buttonCommit['command'] = self.retrieve_input
+            buttonCommit.pack()
+
+        def retrieve_input(self):
+            switcher = {
+                '0':'clock',
+                '1':'pulse',
+                '2':'level',
+                '3':'rs232',
+                '4':'can'
+            }
+            print(switcher.get(textBoxConfig.get("1.0","end-1c"),"Invalid"))
+            
+
+
+        def __init__(self, master=None):
+            
+            self.create_widgets()
+
+        def poll(self):
+            """
+            This method is required to allow the mainloop to receive keyboard
+            interrupts when the frame does not have the focus
+            """
+            self.master.after(250, self.poll)
+
+    class Application(Frame):
+
+        inputVal = 'I1'
+        def create_widgets(self):
+            self.status_button = Button(self)
+            self.status_button['text'] = 'STATUS'
+            self.status_button['fg'] = 'red'
+            self.status_button['command'] = self.status
+            self.status_button.pack({'side': 'left'})
+
+            self.help_button = Button(self)
+            self.help_button['text'] = 'HELP'
+            self.help_button['fg'] = 'blue'
+            self.help_button['command'] = self.help
+            self.help_button.pack({'side': 'left'})
+
+            self.config_button = Button(self)
+            self.config_button['text'] = 'CONFIG'
+            self.config_button['fg'] = 'green'
+            self.config_button['command'] = self.config
+            self.config_button.pack({'side': 'left'})
+
+            self.copy_button = Button(self)
+            self.copy_button['text'] = 'COPY'
+            self.copy_button['fg'] = 'blue'
+            self.copy_button['command'] = self.copy
+            self.copy_button.pack({'side': 'left'})
+
+            self.copy_button = Button(self)
+            self.copy_button['text'] = 'CLEAR'
+            self.copy_button['fg'] = 'green'
+            self.copy_button['command'] = self.clear
+            self.copy_button.pack({'side': 'left'})
+
+            self.copy_button = Button(self)
+            self.copy_button['text'] = 'DISABLE'
+            self.copy_button['fg'] = 'red'
+            self.copy_button['command'] = self.disable
+            self.copy_button.pack({'side': 'left'})
+
+            self.sample_button = Button(self)
+            self.sample_button['text'] = 'SAMPLE'
+            self.sample_button['fg'] = 'blue'
+            self.sample_button['command'] = self.sample
+            self.sample_button.pack({'side': 'left'})
+
+            self.save_button = Button(self)
+            self.save_button['text'] = 'SAVE'
+            self.save_button['fg'] = 'red'
+            self.save_button['command'] = self.save
+            self.save_button.pack({'side': 'left'})
+
+            self.load_button = Button(self)
+            self.load_button['text'] = 'LOAD'
+            self.load_button['fg'] = 'green'
+            self.load_button['command'] = self.load
+            self.load_button.pack({'side': 'left'})
+
+        def save(self):
+            print('save')
+            root = tk.Tk()
+            title = tk.Label(root, text="Save as...",font=("Arial",18))
+            global textBox
+            textBox=Text(root, height=2, width=10)
+            title.pack()
+            textBox.pack()
+            buttonCommit=Button(root, height=1, width=10, text="Commit")
+            buttonCommit['command'] = self.retrieve_input
+            buttonCommit.pack()
+        def load(self):
+            filename = filedialog.askopenfilename(filetypes = (("Template files", "*.tplate")
+                                                             ,("HTML files", "*.html;*.htm")
+                                                             ,("All files", "*.*") ))
+            
+            print(os.path.basename(filename))
+            global loadFileName
+            loadFileName = os.path.basename(filename)
+            env.load('')
+
+        def retrieve_input(self):
+            global inputValue
+            inputValue=textBox.get("1.0","end-1c")
+            print(inputValue)
+            env.save('')
+        
+
+        def sample(self):
+            print('sample')
+            root = tk.Tk()
+            global textBoxSample
+            frame = tk.Frame(master=root, width = 500, bg = 'black')
+            frame.pack()
+            title = tk.Label(root, text="Set Sample Rate",font=("Arial",18))
+            title.pack()
+            textBoxSample=Text(root, height=1, width=5)
+            textBoxSample.pack()
+            buttonCommit=Button(root, height=1, width=10, text="Commit")
+            buttonCommit['command'] = self.retrieve_sample
+            buttonCommit.pack()
+            #app = inputBoxSample(master = Tk())
+            # global sampleValue
+            # sampleValue = '30'
+            # env.sample()
+
+        def retrieve_sample(self):
+            global sampleValue
+            sampleValue= textBoxSample.get("1.0", "end-1c")
+            print("Sample Rate: %s" % sampleValue)
+            env.sample()
+
+        def InputBox(self):        
+            dialog = tk.Toplevel(self.dialogroot)
+            dialog.width = 600
+            dialog.height = 100
+
+            frame = tk.Frame(dialog,  bg='#42c2f4', bd=5)
+            frame.place(relwidth=1, relheight=1)
+
+            entry = tk.Entry(frame, font=40)
+            entry.place(relwidth=0.65, rely=0.02, relheight=0.96)
+            entry.focus_set()
+
+            submit = tk.Button(frame, text='OK', font=16, command=lambda: self.DialogResult(entry.get()))
+            submit.place(relx=0.7, rely=0.02, relheight=0.96, relwidth=0.3)
+
+            root_name = self.dialogroot.winfo_pathname(self.dialogroot.winfo_id())
+            dialog_name = dialog.winfo_pathname(dialog.winfo_id())
+
+            # These two lines show a modal dialog
+            self.dialogroot.tk.eval('tk::PlaceWindow {0} widget {1}'.format(dialog_name, root_name))
+            self.dialogroot.mainloop()
+
+            #This line destroys the modal dialog after the user exits/accepts it
+            dialog.destroy()
+
+            #Print and return the inputbox result
+            print(self.strDialogResult)
+            return self.strDialogResult
+
+        def DialogResult(self, result):
+            self.strDialogResult = result
+            #This line quits from the MODAL STATE but doesn't close or destroy the modal dialog
+            self.dialogroot.quit()
+        def disable(self):
+            print('disable')
+            app = Disable(master=Tk())
+        def status(self):
+            print('status')
+            env.status()
+            print('> ')
+        def help(self):
+            print('help')
+            env.show_help(commands.keys())
+            print('> ')
+        def config(self):
+            print('config')
+            flag = 1
+            #while flag == 1: 
+
+            #env.config('I1')
+            app = TextBox()
+
+        def copy(self):
+            print('copy')
+            app = Copy1(master=Tk())
+        def clear(self):
+            print('clear:')
+            app = Clear(master=Tk())
+        
+
+        def __init__(self, master=None):
+            Frame.__init__(self, master)
+            self.master.minsize(width=400, height=240)
+            self.quit_button = None
+            self.help_button = None
+            self.pack()
+            self.create_widgets()
+            self.poll()
+
+        def poll(self):
+            """
+            This method is required to allow the mainloop to receive keyboard
+            interrupts when the frame does not have the focus
+            """
+            self.master.after(250, self.poll)
+
+    def worker_function(quit_flag):
+        counter = 0
+        while not quit_flag.value:
+            counter += 1
+            logging.info("Work # %d" % counter)
+            time.sleep(1.0)
+
+except:
+    print("No import")
 class TestEnvironment:
-    def __init__(self):
+    def __init__(self,master=None):
         self.profile_path = None
-        self.inputs = [Input(i, env=self) for i in range(1, 5)]
-        self.outputs = [Output(i, mode='disabled', env=self) for i in range(1, 9)]
-        self.tests = []
+        self.inputs = [Input(i, env=self) for i in range(1, 5)] #Up to 5 inputs
+        self.outputs = [Output(i, mode='disabled', env=self) for i in range(1, 9)] #Up to 9 inputs
+        self.tests = [] #Array for added tests
+
         try:
-            self.playback_device = FPGAPlaybackDevice()
+            self.playback_device = FPGAPlaybackDevice() #Look in device.py file
         except IndexError:
             print('No playback device found.')
             self.playback_device = None
-        self.behavior_model = None
+        self.behavior_model = None #Check behavior_model.py file
         self.global_sample_rate = 25 * 1000 * 1000
         self.recording_sample_rate = 50 * 1000 * 1000
+
 
     def status(self, args=None):
         field_values = ['\n'.join(('{} - {}'.format(io.index, io.status())) for io in self.inputs)]
@@ -309,33 +962,34 @@ class TestEnvironment:
         io.configure(args[1:])
 
     def disable(self, args):
-
-        if len(args) == 0:
-            io = Interface.select_signal(self, 'IO: ', signal_name=args[0] if len(args) > 0 else None)
-            io.configure(('disabled', ))
-        else:
-            for io_name in args:
-                io = IO.get(self, io_name)
-                io.configure(('disabled', ))
+        io = IO.get(self, disableInput)
+        io.disable()
+        # if len(args) == 0:
+        #     io = Interface.select_signal(self, 'IO: ', signal_name=args[0] if len(args) > 0 else None)
+        #     io.configure(('disabled', ))
+        # else:
+        #     for io_name in args:
+        #         io = IO.get(self, io_name)
+        #         io.configure(('disabled', ))
 
     def show_help(self, args=[]):
         print(HELP_MESSAGE.format(', '.join(args)))
-
-    def test_add(self, args=None):
+	
+    def test_add(self, args):
         _, T = Interface.menu_choice(device_tests.tests, title='Available tests: ', prompt='Enter a test: ')
         t = T(self)
         t.run_configure_ui()
-        self.tests.append(t)
+        self.tests.append(t) #Adds test
 
     def test_remove(self, args=None):
-        i, _ = Interface.menu_choice(self.tests, prompt='Enter a test: ')
-        self.tests.pop(i)
+        i, _ = Interface.menu_choice(self.tests, prompt='Enter a test: ') #Takes input of test. I assume it considers removing tests that aren't in.
+        self.tests.pop(i) 
 
     def load_model(self, args):
         if args:
             filepath = args[0]
         else:
-            filepath = input('File path: ')
+            filepath = loadFileName
 
         print(filepath)
 
@@ -369,21 +1023,28 @@ class TestEnvironment:
         print('Created new behavior model template at {}'.format(filepath))
         
     def run(self, args):
-        iterations = int(args[0]) if len(args) > 0 else 1
-        results = []
+        try:
+            iterations = int(args[0]) if len(args) > 0 else 1
+            results = []
 
-        for i in range(iterations):
+            for i in range(iterations):
+                if iterations > 1:
+                    print('\nITERATION {}'.format(i))
+                for test in self.tests:
+                    result = test.run(self.inputs, self.outputs)
+                    results.append(result)
+
             if iterations > 1:
-                print('\nITERATION {}'.format(i))
-            for test in self.tests:
-                result = test.run(self.inputs, self.outputs)
-                results.append(result)
-
-        if iterations > 1:
-            print('Test results:')
-            print('Ran {} iterations'.format(iterations))
-            for r in results:
-                print(r)
+                print('Test results:')
+                print('Ran {} iterations'.format(iterations))
+                for r in results:
+                    print(r)
+        except serial.serialutil.SerialException:
+            print('Serial Exception: Attempting to use a port that is not open')
+            print('Check the connection to the playback device. Use the connect function to open the serial port')
+        except Exception as e:
+            print('Aborting: ' + str(e))
+            print(traceback.format_exc())
 
     def plot(self, args):
         
@@ -443,24 +1104,26 @@ class TestEnvironment:
                 print('Cannot plot IO with undefined signal')
 
     def sample(self, args=[]):
-        if len(args) == 1:
-            self.global_sample_rate = parse_rate(args[0])
+        if(sampleValue != -1):
+        # if len(args) == 1:
+            self.global_sample_rate = parse_rate(sampleValue)
 
-        if len(args) == 0 or self.global_sample_rate is None:
-            self.global_sample_rate = input_rate('Set sample rate: ')
+        # if len(args) == 0 or self.global_sample_rate is None:
+        #     self.global_sample_rate = input_rate('Set sample rate: ')
 
     def save(self, args):
         if args:
             filepath = args[0]
 
-        elif self.profile_path is not None:
-            if prompt_yesno('Profile was loaded from {}. Overwrite? '.format(self.profile_path)):
-                filepath = self.profile_path
-            else:
-                filepath = input('File path: ')
+        # elif self.profile_path is not None:
+        #     if prompt_yesno('Profile was loaded from {}. Overwrite? '.format(self.profile_path)):
+        #         filepath = self.profile_path
+        #     else:
+        #         filepath = inputValue
+        #         #filepath = input('File path: ')
 
         else:
-            filepath = input('File path: ')
+            filepath = inputValue
 
         backup_pd = self.playback_device
         self.playback_device = None
@@ -472,8 +1135,8 @@ class TestEnvironment:
                 'relevant_outputs': self.behavior_model.relevant_output_values
             }
 
-        with open(filepath, 'wb') as f:
-            pickle.dump(self, f)
+        with open(filepath, 'wb') as f: #Write Bytes
+            pickle.dump(self, f) #Look at this pickle problem
 
         self.load([filepath], status=False)
         self.playback_device = backup_pd
@@ -482,7 +1145,7 @@ class TestEnvironment:
         if args:
             filepath = args[0]
         else:
-            filepath = input('File path: ')
+            filepath = loadFileName
 
         with open(filepath, 'rb') as f:
             loaded_env = pickle.load(f)
@@ -562,23 +1225,29 @@ class TestEnvironment:
         i, _ = Interface.menu_choice(['Append', 'Prepend', 'Truncate', 'Set sample rate', 'Scale'])
 
         if i == 0:
-            io.signal = io.signal.append(self.get_user_signal(io.signal.sample_rate))
+            io.signal = io.signal.append(self.get_user_signal(io.signal.sample_rate)) #appends new signal
 
         elif i == 1:
-            io.signal = self.get_user_signal(io.signal.sample_rate).append(io.signal)
+            io.signal = self.get_user_signal(io.signal.sample_rate).append(io.signal) #prepend new signal
 
-        elif i == 2:
+        elif i == 2: #Truncate by setting new start and end times
             t0 = input_duration('Start time: ')
             t1 = input_duration('End time: ')
             io.signal = io.signal.truncate(t0, t1)
 
-        elif i == 3:
+        elif i == 3: #New sample rate
             rate = input_rate('Sample rate: ')
             io.signal.sample_rate = rate
 
     def copy(self, args):
-        io1 = Interface.select_signal(self, 'From IO: ', signal_name=args[0] if len(args) > 0 else None)
-        io2 = Interface.select_signal(self, 'To IO: ', signal_name=args[1] if len(args) > 1 else None)
+        # copyInput is not '' and toInput is not '':
+        print(copyInput)
+        print(toInput)
+        io1 = IO.get(env, copyInput)
+        io2 = IO.get(env, toInput)
+        #else:
+        #    io1 = Interface.select_signal(self, 'From IO: ', signal_name=args[0] if len(args) > 0 else None)
+        #    io2 = Interface.select_signal(self, 'To IO: ', signal_name=args[1] if len(args) > 1 else None)
 
         io2.mode = io1.mode
 
@@ -590,15 +1259,49 @@ class TestEnvironment:
             io2.signal = io1.signal.clone()
 
     def clear(self, args):
-        io = Interface.select_signal(self, 'IO: ', signal_name=args[0] if len(args) > 0 else None)
+        #io = Interface.select_signal(self, 'IO: ', signal_name=args[0] if len(args) > 0 else None)
+        global clearIO
+        io = IO.get(env,clearIO)
+        print(clearIO)
         io.signal = None
+
+    def connect(self, args):
+        self.playback_device.connect(args[0] if len(args) > 0 else None)
+
+#Parsing input
+def parse_io_name(name):
+    if len(name) == 0:
+        return None
+
+    io_type = name[0].lower()
+
+    if io_type not in ('i', 'o'):
+        print(IO_NAME_MESSAGE)
+        return None, None
+
+    try:
+        io_index = int(name[1:])
+    except ValueError:
+        print(IO_NAME_MESSAGE)
+        return None, None
+
+    return io_type, io_index
+
+def input_int(*args):
+    while 1:
+        val = input(*args) #For integers
+        try:
+            return int(val)
+        except ValueError:
+            print('Not an integer, try again')
 
 
 def main():
-    env = TestEnvironment()
-
+    sampleValue = -1
+    #env = TestEnvironment()
+    
     commands = {
-        'help': lambda a: env.show_help(commands.keys()),
+        'help': lambda a: env.show_help(commands.keys()), #lambda procedure:expression
         'status': env.status,
         'config': env.config,
         'disable': env.disable,
@@ -614,10 +1317,11 @@ def main():
         'record': env.record,
         'copy': env.copy,
         'edit': env.edit,
-        'clear': env.clear
+        'clear': env.clear,
+        'connect': env.connect
     }
 
-    if len(sys.argv) >= 2 and os.path.exists(sys.argv[1]):
+    if len(sys.argv) >= 2 and os.path.exists(sys.argv[1]): #Checking for all arguments entered and for valid arguments
         env.load([sys.argv[1]])
         print('{} loaded.'.format(sys.argv[1]))
 
@@ -625,16 +1329,26 @@ def main():
         env.show_help(commands.keys())
         print('')
         env.status()
-    
+    root = Tk()
+    app = Application(master=root)
     print('')
-
+    # p=Popen(["./sample.sh"],stdin=PIPE)
+    # cmd, *args = raw_input()
+    # p.stdin.write(line+'\n')
+    
     try:
         while 1:
-            cmd, *args = input('> ').split(' ')
-            if cmd in commands:
+            cmd=' '
+            args = ""
+            cmd, *args = input('> ').split(' ') #Performs commands with arguments 
 
+            if cmd == ' ':
+                
+                pass
+
+            elif cmd in commands:
                 try:
-                    commands[cmd](args)
+                    commands[cmd](args) #Performs given command
                 except KeyboardInterrupt:
                     pass
 
@@ -645,10 +1359,13 @@ def main():
                 print('No such command: "{}"'.format(cmd))
                 env.show_help(commands.keys())
 
-            print('')
+            #print('')
+            
+
 
     except (KeyboardInterrupt, EOFError):
         print('\n' + EXIT_MESSAGE)
+
 
     except exceptions.PlaybackDeviceException as e:
         print('Playback peripheral: ' + str(e))
@@ -660,3 +1377,43 @@ def main():
         import traceback
         traceback.print_exc()
         raise
+
+env = TestEnvironment()
+
+"""
+format = '%(levelname)s: %(filename)s: %(lineno)d: %(message)s'
+logging.basicConfig(level=logging.DEBUG, format=format)
+root = Tk()
+app = Application(master=root)
+quit_flag = multiprocessing.Value('i', int(False))
+worker_thread = threading.Thread(target=worker_function, args=(quit_flag,))
+worker_thread.start()
+logging.info("quit_flag.value = %s" % bool(quit_flag.value))
+try:
+    app.mainloop()
+except KeyboardInterrupt:
+    logging.info("Keyboard interrupt")
+quit_flag.value = True
+logging.info("quit_flag.value = %s" % bool(quit_flag.value))
+worker_thread.join()
+"""
+commands = {
+        'help': lambda a: env.show_help(commands.keys()), #lambda procedure:expression
+        'status': env.status,
+        'config': env.config,
+        'disable': env.disable,
+        'test_add': env.test_add,
+        'test_remove': env.test_remove,
+        'model_create': env.create_model,
+        'model_load': env.load_model,
+        'run': env.run,
+        'plot': env.plot,
+        'sample': env.sample,
+        'save': env.save,
+        'load': env.load,
+        'record': env.record,
+        'copy': env.copy,
+        'edit': env.edit,
+        'clear': env.clear,
+        'connect': env.connect
+        }
