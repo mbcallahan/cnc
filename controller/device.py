@@ -10,7 +10,7 @@ from .signal import Signal
 from .exceptions import PlaybackDeviceException
 
 MHZ = 1000 * 1000
-DO_ECHO = False
+DO_ECHO = True
 
 class FPGAPlaybackDevice:
     #STOP_SUPPORT = True

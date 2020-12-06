@@ -21,7 +21,7 @@ from .can_bus import CanBusDeviceTest
 from .serial_test import SerialTest
 from .pic_single_inst import PICSingleInstructionGlitch
 from .clock_glitch import ClockGlitchDev
-
+from .pic_reset import PICReset
 
 tests = [
     BasicPlayback, 
@@ -35,5 +35,6 @@ tests = [
     PICSingleInstructionGlitch,
     SerialFuzzer, 
     SerialTest,
-    ClockGlitchDev
+    ClockGlitchDev,
+    PICReset
     ]
